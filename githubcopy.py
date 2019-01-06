@@ -39,15 +39,18 @@ test = pd.read_csv('./input/test.csv')
 
 #print(test.head())
 
-#train = train.drop(train[(train['GrLivArea']>4000) & (train['SalePrice']<300000)].index)
-
+train = train.drop(train[(train['GrLivArea'] > 4000) & (train['SalePrice'] < 300000)].index)
 # todo 效果有待观察
-#train.loc[train.SalePrice > 600000, "SalePrice"] = 600000
+train.loc[train.SalePrice > 600000, "SalePrice"] = 600000
+
 #plt.figure(figsize=(15,8))
 #sns.boxplot(train.YearBuilt, train.SalePrice)
 #plt.show()
 #full = pd.concat([train, test], axis=0, ignore_index=True)
 full = pd.concat((train.loc[:,'MSSubClass':'SaleCondition'], test.loc[:,'MSSubClass':'SaleCondition']), axis=0, ignore_index=True)
+
+#full.BsmtCond.fillna(full.BsmtCond.mode()[0], inplace=True)
+
 #all_df = pd.concat((train_df.loc[:,'MSSubClass':'SaleCondition'], test_df.loc[:,'MSSubClass':'SaleCondition']), axis=0,ignore_index=True)
 #full.drop(['Id'], axis=1, inplace=True)
 def fix_na():
@@ -74,6 +77,10 @@ def fix_na():
     for col in cols2:
         full[col].fillna(full[col].mode()[0], inplace=True)
 
+def process_islo():
+    full.drop(full[(full['GrLivArea'] > 4000) & (full['SalePrice'] < 300000)].index)
+    # todo 效果有待观察
+    full.loc[full.SalePrice > 600000, "SalePrice"] = 600000
 def map_values():
     """
     todo    尝试下别的dumpy
@@ -409,15 +416,20 @@ svr = SVR(gamma=0.00001, kernel='rbf', C=17, epsilon=0.009)
 ker = KernelRidge(alpha=0.09, kernel='polynomial', degree=1, coef0=1.1)
 ela = ElasticNet(alpha=0.006, l1_ratio=0.11, max_iter=10000)
 bay = BayesianRidge()
-xgb = XGBRegressor()
+xgb = XGBRegressor(silent=1, n_estimators=260, learning_rate=0.085, max_depth=4, min_child_weight=3)
 
-print(xgb.get_xgb_params())
-print(dir(xgb))
+#print(xgb.get_xgb_params())
+#print(dir(xgb))
 
-model_instance_list = [lasso, ridge, svr, ela, bay, xgb]
+#model_instance_list = [lasso, ridge, svr, ela, xgb]
+model_instance_list = [lasso, ridge, svr, ela, bay, xgb, ker]
 model_instance_arr = {"lasso": lasso, "ridge": ridge, "svr": svr, "ela": ela, "bay": bay, "ker": ker, "xgb": xgb}
 
-grid_get(xgb, x_train, y_log, {'booster': [15, 16, 17, 18, 19, 20, 21]})
+score = rmse_cv(ela, x_train, y_log)
+print("{}: {:.6f}, {:.4f}".format("ela", score.mean(), score.std()))
+
+#grid_get(xgb, x_train, y_log, {"min_child_weight": [1, 2, 3, 4, 5]})
+#grid_get(xgb, x_train, y_log, {"objective": ["reg:linear", "multi:softmax", "multi:softprob", "rank:pairwise"]})
 
 #for name, model in model_instance_arr.iteritems():
 #    score = rmse_cv(model, x_train, y_log)
@@ -462,12 +474,12 @@ b = Imputer().fit_transform(y_log.values.reshape(-1, 1)).ravel()
 #score = rmse_cv(stackingModel, a_train, b)
 ##score = rmse_cv(stackingModel, x_train, y_log)
 #print("{}: {:.6f}, {:.4f}".format("stack_model_xgb", score.mean(), score.std()))
-
+#
 #stackingModel.fit(a_train, b)
 #y_final = stackingModel.predict(a_test)
-
+#
 #submission_df = pd.DataFrame(data={'Id': test.Id, 'SalePrice': np.exp(y_final)})
-#submission_df.to_csv('./input/submission_stacking_2.csv', columns=['Id', 'SalePrice'], index=False)
+#submission_df.to_csv('./input/submission_stacking_3.csv', columns=['Id', 'SalePrice'], index=False)
 #print(x_train.shape)
 #print(x_test.shape)
 #print(data_pipe.shape)
