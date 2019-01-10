@@ -12,13 +12,14 @@ plt.style.use('ggplot')
 
 from sklearn.base import BaseEstimator, TransformerMixin, RegressorMixin, clone
 from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import RobustScaler, StandardScaler
+from sklearn.preprocessing import RobustScaler, StandardScaler, MinMaxScaler
 from sklearn.metrics import mean_squared_error
 from sklearn.pipeline import Pipeline, make_pipeline
 from scipy.stats import skew
 from sklearn.decomposition import PCA, KernelPCA
 from sklearn.preprocessing import Imputer
 
+from sklearn.cluster import KMeans
 from sklearn.model_selection import cross_val_score, GridSearchCV, KFold
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
@@ -38,16 +39,66 @@ train = pd.read_csv('./input/train.csv')
 test = pd.read_csv('./input/test.csv')
 
 #print(test.head())
+#train = train.drop(train[(train['GrLivArea'] > 3500) & (train['SalePrice'] < 250000)].index)
+#train.loc[train.SalePrice > 550000, "SalePrice"] = 550000
 
-train = train.drop(train[(train['GrLivArea'] > 4000) & (train['SalePrice'] < 300000)].index)
-# todo 效果有待观察
-train.loc[train.SalePrice > 600000, "SalePrice"] = 600000
+
+#train.loc[(train["MSZoning"] == "RM") & (train.SalePrice > 300000), "SalePrice"] = 300000
+
+#print(test[test['GrLivArea'] > 4000].shape)
+#test.loc[(test["GrLivArea"] > 3700), "GrLivArea"] = 3700
+#print(test[test['GrLivArea'] > 4000].shape)
+#train = train.drop(train[train['GrLivArea'] > 4000].index)
+#
+#test.loc[(test["1stFlrSF"] > 2600), "1stFlrSF"] = 2600
+#train = train.drop(train[train['1stFlrSF'] > 3000].index)
+
+
+full = pd.concat((train.loc[:, 'MSSubClass':'SaleCondition'], test.loc[:, 'MSSubClass':'SaleCondition']), axis=0, ignore_index=True)
+
+#full.loc[(full["LowQualFinSF"] < 300) & (full["LowQualFinSF"] > 0), "LowQualFinSF"] = 1
+#full.loc[(full["LowQualFinSF"] > 300), "LowQualFinSF"] = 2
+#
+
+def add_neig():
+    data = train.groupby(by='Neighborhood').SalePrice.mean()
+    location = np.array(data.index)
+    price_lo = np.array(data.values).reshape(-1,1)
+    km = KMeans(n_clusters=6)
+    label = km.fit_predict(price_lo)#计算簇中心及为簇分配序号
+    expense = np.sum(km.cluster_centers_,axis=1)
+    CityCluster = [[],[],[], [], [], []]
+    dict_map = {}
+    for i in range(len(location)):
+        #print(label[i])
+        #print(location[i])
+        CityCluster[label[i]].append(location[i])
+        dict_map[location[i]] = label[i]
+    print(dict_map)
+    nei_dict = dict()
+    new1 = dict()
+    new2 = dict()
+    nei_dict = nei_dict.fromkeys(['NoRidge', 'NridgHt', 'StoneBr'],2)
+    new1 = new1.fromkeys(['Blueste', 'BrDale', 'BrkSide', 'Edwards',
+                                  'IDOTRR', 'MeadowV', 'Mitchel', 'NAmes', 'NPkVill',
+                                  'OldTown', 'SWISU', 'Sawyer'],1)
+    new2 = new2.fromkeys(['Blmngtn', 'ClearCr', 'CollgCr', 'Crawfor', 'Gilbert',
+                                  'NWAmes', 'SawyerW', 'Somerst', 'Timber', 'Veenker'],0)
+    nei_dict.update(new1)
+    nei_dict.update(new2)
+    #print(dict_map)
+
+    #print(full["Neighborhood"].value_counts())
+    #print(full["Neighborhood"].isna().count())
+    #print(full.shape)
+    full['Neighborhood_2'] = full.Neighborhood.map(dict_map).astype(int)
+    #print(full["Neighborhood_2"].value_counts())
+
 
 #plt.figure(figsize=(15,8))
 #sns.boxplot(train.YearBuilt, train.SalePrice)
 #plt.show()
 #full = pd.concat([train, test], axis=0, ignore_index=True)
-full = pd.concat((train.loc[:,'MSSubClass':'SaleCondition'], test.loc[:,'MSSubClass':'SaleCondition']), axis=0, ignore_index=True)
 
 #full.BsmtCond.fillna(full.BsmtCond.mode()[0], inplace=True)
 
@@ -151,7 +202,8 @@ def map_values():
     full["oKitchenQual"] = full.KitchenQual.map({'Fa': 1, 'TA': 2, 'Gd': 3, 'Ex': 4})
 
     full["oFunctional"] = full.Functional.map(
-        {'Maj2': 1, 'Maj1': 2, 'Min1': 2, 'Min2': 2, 'Mod': 2, 'Sev': 2, 'Typ': 3})
+        {'Maj2': "1", 'Maj1': "2", 'Min1': "2", 'Min2': "2", 'Mod': "2", 'Sev': "2", 'Typ': "3"})
+    #{'Maj2': 1, 'Maj1': 2, 'Min1': 2, 'Min2': 2, 'Mod': 2, 'Sev': 2, 'Typ': 3})
 
     full["oFireplaceQu"] = full.FireplaceQu.map({'None': 1, 'Po': 1, 'Fa': 2, 'TA': 3, 'Gd': 4, 'Ex': 5})
 
@@ -281,14 +333,17 @@ pipe = Pipeline([
 #('add_feature', add_feature(additional=2)),
 
 fix_na()
-map_values()
+#map_values()
 
 full.drop("LotAreaCut", axis=1, inplace=True)
+#full.drop("Neighborhood", axis=1, inplace=True)
 #full.drop(['SalePrice'], axis=1, inplace=True)
 
 full2 = full.copy()
 data_pipe = pipe.fit_transform(full2)
-scaler = RobustScaler()
+#scaler = MinMaxScaler()
+scaler = StandardScaler()
+#scaler = RobustScaler()
 data_scaled = scaler.fit(data_pipe).transform(data_pipe)
 
 n_train = train.shape[0]
@@ -298,7 +353,9 @@ y_log = np.log(train.SalePrice)
 
 print(x_train.shape)
 
-#pca = PCA(n_components=400)
+#from sklearn.lda import LDA
+
+#pca = PCA(n_components=360)
 #x_train = pca.fit_transform(x_train)
 #x_test = pca.transform(x_test)
 #print(x_train.shape)
@@ -425,7 +482,7 @@ xgb = XGBRegressor(silent=1, n_estimators=260, learning_rate=0.085, max_depth=4,
 model_instance_list = [lasso, ridge, svr, ela, bay, xgb, ker]
 model_instance_arr = {"lasso": lasso, "ridge": ridge, "svr": svr, "ela": ela, "bay": bay, "ker": ker, "xgb": xgb}
 
-score = rmse_cv(ela, x_train, y_log)
+score = rmse_cv(lasso, x_train, y_log)
 print("{}: {:.6f}, {:.4f}".format("ela", score.mean(), score.std()))
 
 #grid_get(xgb, x_train, y_log, {"min_child_weight": [1, 2, 3, 4, 5]})
@@ -448,11 +505,11 @@ print("{}: {:.6f}, {:.4f}".format("ela", score.mean(), score.std()))
 
 #stackModel = StackingModels(models=model_instance_list, meta_model=xgb)
 #score = rmse_cv(stackModel, x_train, y_log)
-##print(dir(stackModel.meta_model))
-##print(stackModel.meta_model.kernel_params)
-##print(stackModel.meta_model.alpha)
-##print(stackModel.meta_model.coef0)
-##print(stackModel.meta_model.degree)
+#print(dir(stackModel.meta_model))
+#print(stackModel.meta_model.kernel_params)
+#print(stackModel.meta_model.alpha)
+#print(stackModel.meta_model.coef0)
+#print(stackModel.meta_model.degree)
 #print("{}: {:.6f}, {:.4f}".format("stack_model", score.mean(), score.std()))
 
 
@@ -470,16 +527,16 @@ b = Imputer().fit_transform(y_log.values.reshape(-1, 1)).ravel()
 ##score = rmse_cv(stackingModel, x_train, y_log)
 #print("{}: {:.6f}, {:.4f}".format("stack_model", score.mean(), score.std()))
 
-#stackingModel = stacking(mod=model_instance_list, meta_model=ker)
-#score = rmse_cv(stackingModel, a_train, b)
-##score = rmse_cv(stackingModel, x_train, y_log)
-#print("{}: {:.6f}, {:.4f}".format("stack_model_xgb", score.mean(), score.std()))
+stackingModel = stacking(mod=model_instance_list, meta_model=ker)
+score = rmse_cv(stackingModel, a_train, b)
+#score = rmse_cv(stackingModel, x_train, y_log)
+print("{}: {:.6f}, {:.4f}".format("stack_model_xgb", score.mean(), score.std()))
 #
-#stackingModel.fit(a_train, b)
-#y_final = stackingModel.predict(a_test)
+stackingModel.fit(a_train, b)
+y_final = stackingModel.predict(a_test)
 #
-#submission_df = pd.DataFrame(data={'Id': test.Id, 'SalePrice': np.exp(y_final)})
-#submission_df.to_csv('./input/submission_stacking_3.csv', columns=['Id', 'SalePrice'], index=False)
+submission_df = pd.DataFrame(data={'Id': test.Id, 'SalePrice': np.exp(y_final)})
+submission_df.to_csv('./input/submission_stacking_8.csv', columns=['Id', 'SalePrice'], index=False)
 #print(x_train.shape)
 #print(x_test.shape)
 #print(data_pipe.shape)
