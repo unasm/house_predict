@@ -38,6 +38,8 @@ pd.set_option('display.max_rows', 1000)
 train = pd.read_csv('./input/train.csv')
 test = pd.read_csv('./input/test.csv')
 
+train = train.drop(train[(train['GrLivArea'] > 3500) & (train['SalePrice'] < 250000)].index)
+
 full = pd.concat((train.loc[:,'MSSubClass':'SaleCondition'], test.loc[:,'MSSubClass':'SaleCondition']), axis=0, ignore_index=True)
 
 
@@ -364,19 +366,26 @@ class stacking(BaseEstimator, RegressorMixin, TransformerMixin):
 # ])
 
 
-
+def getScalar():
+    return StandardScaler()
+    #return RobustScaler()
 
 
 def get_outliner(fulldata, n_train, model, y_log):
     data_pipe = pipe.fit_transform(fulldata)
     #data_pipe.head()
-    scaler = RobustScaler()
+    scaler = getScalar()
+    print(type(data_pipe))
     data_scaled = scaler.fit(data_pipe).transform(data_pipe)
+    print(type(data_scaled))
     #n_train = train.shape[0]
-    x_train = data_pipe[:n_train]
+    x_train = data_scaled[:n_train]
     #x_train = data_scaled[:n_train]
     #x_test = data_scaled[n_train:]
 
+    x_train = Imputer().fit_transform(x_train)
+    #a_test = Imputer().fit_transform(x_test)
+    y_log = Imputer().fit_transform(y_log.values.reshape(-1, 1)).ravel()
 
     score = rmse_cv(model, x_train, y_log)
     model.fit(x_train, y_log)
@@ -384,15 +393,18 @@ def get_outliner(fulldata, n_train, model, y_log):
     #diff = abs(y_pred - y_log)
     #print(diff.sort_values()[-20:])
     #print(diff.sort_values()[:10])
-    print("{}: {:.6f}, {:.4f}".format("ela", score.mean(), score.std()))
-    outliner = x_train[abs(y_pred - y_log) >= 0.294232]
+    print("{}: {:.6f}, {:.4f}".format("score_get_outliner", score.mean(), score.std()))
+    outliner = pd.DataFrame(x_train[abs(y_pred - y_log) >= 0.304232])
+    #outliner = pd.DataFrame(x_train[abs(y_pred - y_log) >= 0.284232])
+    #outliner = x_train[abs(y_pred - y_log) >= 0.294232]
     return outliner
 
 
 def run_model(fulldata, n_train, model, y_log, is_output=False, is_stacking=False):
     data_pipe = pipe.fit_transform(fulldata)
     #data_pipe.head()
-    scaler = RobustScaler()
+    scaler = getScalar()
+    #scaler = RobustScaler()
     data_scaled = scaler.fit(data_pipe).transform(data_pipe)
     #n_train = train.shape[0]
     x_train = data_scaled[:n_train]
@@ -405,8 +417,16 @@ def run_model(fulldata, n_train, model, y_log, is_output=False, is_stacking=Fals
         y_log = Imputer().fit_transform(y_log.values.reshape(-1, 1)).ravel()
         #print(test[(test['GrLivArea'] > 3500)].Id)
 
+    #score = rmse_cv(model, x_train, y_log)
+    # diff = abs(y_pred - y_log)
+    # print(diff.sort_values()[-20:])
+    # print(diff.sort_values()[:10])
+    #print("{}: {:.6f}, {:.4f}".format("ela", score.mean(), score.std()))
+
     if is_output:
         model.fit(x_train, y_log)
+        score = rmse_cv(model, x_train, y_log)
+        print("{}: {:.6f}, {:.4f}".format("ela", score.mean(), score.std()))
         y_pred = model.predict(x_test)
         submission_df = pd.DataFrame(data={'Id': test.Id, 'SalePrice': np.exp(y_pred)})
         submission_df.to_csv('./input/submission_stacking_outline_droped.csv', columns=['Id', 'SalePrice'], index=False)
@@ -425,6 +445,8 @@ pipe = Pipeline([
     ('skew_dummies', skew_dummies(skew=1))
 ])
 
+#('add_feature', add_feature(additional=2)),
+
 lasso = Lasso(alpha=0.0002, max_iter=10000)
 ridge = Ridge(alpha=25)
 svr = SVR(gamma=0.00001, kernel='rbf', C=17, epsilon=0.009)
@@ -438,23 +460,32 @@ rfr = RandomForestRegressor(max_depth=12, random_state=0, n_estimators=400)
 #print(dir(xgb))
 
 #model_instance_list = [lasso, ridge, svr, ela, xgb]
-model_instance_list = [lasso, ridge, svr, ela, bay, xgb, ker, rfr]
+#model_instance_list = [lasso, ridge, svr, ela, bay, xgb, ker]
+model_instance_list = [lasso, ridge, svr, ela, bay, xgb, ker]
 model_instance_arr = {"lasso": lasso, "ridge": ridge, "svr": svr, "ela": ela, "bay": bay, "ker": ker, "xgb": xgb}
 
 #score = rmse_cv(lasso, x_train, y_log)
 #print("{}: {:.6f}, {:.4f}".format("lasso", score.mean(), score.std()))
 
-lasso = Lasso(alpha=0.0002, max_iter=10000)
-full2 = full.copy()
-outliner = get_outliner(full2, train.shape[0], lasso, np.log(train.SalePrice))
-
-
-to_drop_train = train.copy()
-train_droped = to_drop_train.drop(outliner.index)
-full3 = pd.concat((train_droped.loc[:, 'MSSubClass':'SaleCondition'], test.loc[:,'MSSubClass':'SaleCondition']), axis=0, ignore_index=True)
-print(train.shape)
-run_model(full3.copy(), train_droped.shape[0], lasso, False, np.log(train_droped.SalePrice))
+#for name, model in model_instance_arr.iteritems():
+#    score = rmse_cv(model, x_train, y_log)
+#    print("{}: {:.6f}, {:.4f}".format(name, score.mean(), score.std()))
 
 stackingModel = stacking(mod=model_instance_list, meta_model=ker)
+
+
+#outliner = get_outliner(full.copy(), train.shape[0], stackingModel, np.log(train.SalePrice))
+#outliner = get_outliner(full.copy(), train.shape[0], lasso, np.log(train.SalePrice))
+
+#print("shape_of_outliner", outliner.shape)
+
+to_drop_train = train.copy()
+train_droped = to_drop_train
+#train_droped = to_drop_train.drop(outliner.index)
+full3 = pd.concat((train_droped.loc[:, 'MSSubClass':'SaleCondition'], test.loc[:,'MSSubClass':'SaleCondition']), axis=0, ignore_index=True)
+print("train : ", train.shape)
+print("train_droped : ", train_droped.shape)
+#run_model(full3.copy(), train_droped.shape[0], lasso, np.log(train_droped.SalePrice), is_output=False)
+
 
 run_model(full3.copy(), train_droped.shape[0], stackingModel, np.log(train_droped.SalePrice), is_output=False, is_stacking=True)
